@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REELCAP — Offline Auto-Caption Studio</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#0B0D10;
+    --panel:#14171B;
+    --panel-2:#191D22;
+    --border:#262B31;
+    --text:#ECE7DD;
+    --text-dim:#8B9199;
+    --amber:#E7A93E;
+    --teal:#35A7A1;
+    --red:#D96257;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;}
+  ::selection{background:var(--amber);color:#161616;}
+
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 22px;border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,#101317,#0B0D10);
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand .mark{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:0.5px;
+  }
+  .brand .mark span{color:var(--amber);}
+  .brand .tag{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);}
+  .status{
+    display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-dim);
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);}
+  .dot.ready{background:var(--teal);box-shadow:0 0 8px var(--teal);}
+  .dot.busy{background:var(--amber);box-shadow:0 0 8px var(--amber);animation:pulse 1s infinite;}
+  @keyframes pulse{50%{opacity:0.35;}}
+
+  .layout{
+    display:grid;grid-template-columns:1fr 380px;gap:18px;
+    padding:18px;max-width:1400px;margin:0 auto;
+  }
+  @media (max-width:900px){ .layout{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;
+  }
+  .panel h2{
+    font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;letter-spacing:0.06em;
+    text-transform:uppercase;color:var(--text-dim);margin:0 0 12px 0;
+  }
+
+  /* stage */
+  .stage{
+    position:relative;background:#000;border-radius:8px;overflow:hidden;
+    aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--border);
+  }
+  .stage video{width:100%;height:100%;object-fit:contain;display:block;}
+  .dropzone{
+    width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;cursor:pointer;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-size:13px;
+    border:1px dashed var(--border);
+  }
+  .dropzone strong{color:var(--text);font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;}
+  .dropzone.drag{border-color:var(--amber);color:var(--amber);}
+
+  .burn-in{
+    position:absolute;left:6%;right:6%;bottom:7%;text-align:center;pointer-events:none;
+  }
+  .burn-in span{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(14px,2.4vw,26px);
+    color:#FFF5DE;background:rgba(0,0,0,0.0);
+    -webkit-text-stroke:3px rgba(0,0,0,0.85);
+    paint-order:stroke fill;
+    line-height:1.35;
+  }
+  .burn-in span.amber{color:var(--amber);}
+
+  .transport{
+    display:flex;align-items:center;gap:10px;margin-top:10px;
+  }
+  .transport button{
+    background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    width:34px;height:34px;border-radius:7px;cursor:pointer;font-size:14px;
+  }
+  .transport button:hover{border-color:var(--amber);}
+  .seek{flex:1;accent-color:var(--amber);}
+  .time{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);min-width:96px;text-align:right;}
+
+  canvas#waveform{width:100%;height:56px;display:block;margin-top:12px;border-radius:6px;background:var(--panel-2);border:1px solid var(--border);cursor:pointer;}
+
+  /* controls panel */
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);
+    margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;
+  }
+  select, .btn{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    padding:9px 10px;border-radius:7px;font-family:'Inter',sans-serif;font-size:13px;
+  }
+  .btn{
+    cursor:pointer;font-weight:600;text-align:center;transition:border-color .15s,background .15s;
+  }
+  .btn:hover:not(:disabled){border-color:var(--amber);}
+  .btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .btn.primary{background:var(--amber);color:#161616;border-color:var(--amber);}
+  .btn.primary:hover:not(:disabled){filter:brightness(1.08);}
+  .btn.row{display:flex;gap:8px;}
+  .btn.row .btn{flex:1;}
+
+  .progress-wrap{margin-top:8px;height:5px;background:var(--panel-2);border-radius:4px;overflow:hidden;border:1px solid var(--border);}
+  .progress-bar{height:100%;width:0%;background:var(--teal);transition:width .2s;}
+  .progress-label{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:6px;}
+
+  .note{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.6;color:var(--text-dim);
+    border-top:1px solid var(--border);padding-top:12px;margin-top:14px;
+  }
+  .note strong{color:var(--teal);}
+
+  /* transcript list */
+  .transcript-panel{grid-column:1/-1;}
+  .cue-list{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding-right:4px;}
+  .cue{
+    display:grid;grid-template-columns:110px 1fr auto;gap:12px;align-items:start;
+    background:var(--panel-2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;
+  }
+  .cue.active{border-color:var(--amber);}
+  .cue .ts{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--teal);white-space:nowrap;padding-top:6px;}
+  .cue textarea{
+    background:transparent;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:13.5px;
+    resize:none;width:100%;line-height:1.5;padding:4px 0;
+  }
+  .cue textarea:focus{outline:none;}
+  .cue .del{
+    background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:15px;padding:4px;
+  }
+  .cue .del:hover{color:var(--red);}
+  .empty-state{
+    color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:center;padding:30px 0;
+  }
+
+  .cue-list::-webkit-scrollbar{width:6px;}
+  .cue-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark">REEL<span>CAP</span></div>
+    <div class="tag">offline whisper captioning</div>
+  </div>
+  <div class="status">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">model not loaded</span>
+  </div>
+</div>
+
+<div class="layout">
+
+  <div class="panel">
+    <h2>Preview</h2>
+    <div class="stage" id="stage">
+      <label class="dropzone" id="dropzone" for="fileInput">
+        <strong>Tap to choose a video</strong>
+        <span>or drop a file here — mp4, webm, mov</span>
+      </label>
+    </div>
+    <div class="burn-in" id="burnIn" style="display:none;"><span id="burnInText" class="amber"></span></div>
+    <input type="file" id="fileInput" accept="video/*" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;">
+
+    <div class="transport" id="transport" style="display:none;">
+      <button id="playBtn">▶</button>
+      <input type="range" id="seek" class="seek" min="0" max="100" value="0" step="0.01">
+      <span class="time" id="timeLabel">00:00 / 00:00</span>
+    </div>
+    <canvas id="waveform" style="display:none;"></canvas>
+  </div>
+
+  <div class="panel">
+    <h2>Transcription</h2>
+
+    <div class="field">
+      <label>Model</label>
+      <select id="modelSelect">
+        <option value="Xenova/whisper-tiny.en">Tiny (English) — ~75MB, fastest</option>
+        <option value="Xenova/whisper-base">Base (multilingual) — ~145MB</option>
+        <option value="Xenova/whisper-small">Small (multilingual) — ~465MB, best accuracy</option>
+      </select>
+    </div>
+
+    <button class="btn primary" id="loadModelBtn">Load model</button>
+    <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="progress-label" id="progressLabel">not loaded</div>
+
+    <div class="field" style="margin-top:16px;">
+      <label>Actions</label>
+      <div class="btn row">
+        <button class="btn" id="transcribeBtn" disabled>Generate captions</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Export</label>
+      <div class="btn row">
+        <button class="btn" id="exportSrt" disabled>.SRT</button>
+        <button class="btn" id="exportVtt" disabled>.VTT</button>
+        <button class="btn" id="exportTxt" disabled>.TXT</button>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Offline notes —</strong><br>
+      • First run downloads the model and caches it in your browser (Cache Storage). After that, transcription runs fully on-device with no network calls.<br>
+      • For the cache to persist reliably, serve this file over <strong>http(s)</strong> (e.g. <code>python -m http.server</code>) rather than opening it directly as <code>file://</code>.<br>
+      • Audio is decoded in-browser; nothing is uploaded anywhere.
+    </div>
+  </div>
+
+  <div class="panel transcript-panel">
+    <h2>Caption cues <span id="cueCount" style="color:var(--text-dim);text-transform:none;"></span></h2>
+    <div class="cue-list" id="cueList">
+      <div class="empty-state">No captions yet — load a video, load a model, then generate captions.</div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+
+env.allowLocalModels = false;
+env.useBrowserCache = true;
+
+const el = (id) => document.getElementById(id);
+const dropzone = el('dropzone'), stage = el('stage'), fileInput = el('fileInput'),
+      video = document.createElement('video'), transport = el('transport'),
+      playBtn = el('playBtn'), seek = el('seek'), timeLabel = el('timeLabel'),
+      burnIn = el('burnIn'), burnInText = el('burnInText'),
+      waveform = el('waveform'), wctx = waveform.getContext('2d'),
+      modelSelect = el('modelSelect'), loadModelBtn = el('loadModelBtn'),
+      progressBar = el('progressBar'), progressLabel = el('progressLabel'),
+      transcribeBtn = el('transcribeBtn'), statusDot = el('statusDot'), statusText = el('statusText'),
+      cueList = el('cueList'), cueCount = el('cueCount'),
+      exportSrt = el('exportSrt'), exportVtt = el('exportVtt'), exportTxt = el('exportTxt');
+
+video.style.cssText = "width:100%;height:100%;object-fit:contain;";
+video.controls = false;
+
+let transcriber = null;
+let audioSamples = null; // Float32Array 16kHz mono
+let audioDuration = 0;
+let cues = []; // {start,end,text}
+let peaks = [];
+
+// ---------- file loading ----------
+['dragover','dragleave','drop'].forEach(evt=>{
+  dropzone.addEventListener(evt, (e)=>{
+    e.preventDefault();
+    dropzone.classList.toggle('drag', evt==='dragover');
+  });
+});
+dropzone.addEventListener('drop', (e)=>{
+  const f = e.dataTransfer.files[0];
+  if (f) loadVideo(f);
+});
+fileInput.addEventListener('change', (e)=>{
+  const f = e.target.files[0];
+  if (f) loadVideo(f);
+});
+
+async function loadVideo(file){
+  stage.innerHTML = '';
+  stage.appendChild(video);
+  video.src = URL.createObjectURL(file);
+  transport.style.display = 'flex';
+  burnIn.style.display = 'block';
+  waveform.style.display = 'block';
+  transcribeBtn.disabled = !transcriber;
+  resetCues();
+
+  video.addEventListener('loadedmetadata', () => {
+    seek.max = video.duration;
+    updateTimeLabel();
+  }, { once:true });
+
+  setStatus('decoding audio…', 'busy');
+  try{
+    const buf = await file.arrayBuffer();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const decoded = await ctx.decodeAudioData(buf.slice(0));
+    audioDuration = decoded.duration;
+    audioSamples = await resampleTo16k(decoded);
+    computePeaks(decoded);
+    drawWaveform();
+    setStatus(transcriber ? 'ready' : 'model not loaded', transcriber ? 'ready':'');
+  }catch(err){
+    console.error(err);
+    setStatus('could not decode audio track', '');
+    alert('Could not decode this file\'s audio in-browser. Try re-exporting as MP4 (H.264/AAC) or WebM.');
+  }
+}
+
+async function resampleTo16k(decoded){
+  const targetRate = 16000;
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * targetRate), targetRate);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start(0);
+  const rendered = await offline.startRendering();
+  return rendered.getChannelData(0);
+}
+
+function computePeaks(decoded){
+  const ch = decoded.getChannelData(0);
+  const buckets = 400;
+  const step = Math.floor(ch.length/buckets);
+  peaks = [];
+  for(let i=0;i<buckets;i++){
+    let max=0;
+    for(let j=0;j<step;j++){
+      const v = Math.abs(ch[i*step+j] || 0);
+      if(v>max) max=v;
+    }
+    peaks.push(max);
+  }
+}
+
+function drawWaveform(){
+  const dpr = window.devicePixelRatio || 1;
+  const w = waveform.clientWidth, h = 56;
+  waveform.width = w*dpr; waveform.height = h*dpr;
+  wctx.scale(dpr,dpr);
+  wctx.clearRect(0,0,w,h);
+  const barW = w/peaks.length;
+  peaks.forEach((p,i)=>{
+    const bh = Math.max(2, p*h*0.9);
+    wctx.fillStyle = '#3A4148';
+    wctx.fillRect(i*barW, (h-bh)/2, barW*0.7, bh);
+  });
+  // cue markers
+  cues.forEach(c=>{
+    const x1 = (c.start/audioDuration)*w, x2=(c.end/audioDuration)*w;
+    wctx.fillStyle = 'rgba(231,169,62,0.18)';
+    wctx.fillRect(x1,0,Math.max(1,x2-x1),h);
+  });
+}
+waveform.addEventListener('click', (e)=>{
+  if(!audioDuration) return;
+  const rect = waveform.getBoundingClientRect();
+  const frac = (e.clientX-rect.left)/rect.width;
+  video.currentTime = frac*audioDuration;
+});
+
+// ---------- transport ----------
+playBtn.addEventListener('click', ()=>{
+  if(video.paused){ video.play(); playBtn.textContent='❚❚'; }
+  else { video.pause(); playBtn.textContent='▶'; }
+});
+video.addEventListener('ended', ()=> playBtn.textContent='▶');
+video.addEventListener('timeupdate', ()=>{
+  seek.value = video.currentTime;
+  updateTimeLabel();
+  updateBurnIn();
+});
+seek.addEventListener('input', ()=>{ video.currentTime = seek.value; });
+
+function fmt(t){
+  const m = Math.floor(t/60).toString().padStart(2,'0');
+  const s = Math.floor(t%60).toString().padStart(2,'0');
+  return `${m}:${s}`;
+}
+function updateTimeLabel(){
+  timeLabel.textContent = `${fmt(video.currentTime||0)} / ${fmt(video.duration||0)}`;
+}
+function updateBurnIn(){
+  const t = video.currentTime;
+  const active = cues.find(c=> t>=c.start && t<=c.end);
+  if(active){
+    burnInText.textContent = active.text;
+    burnIn.style.display = 'block';
+  } else {
+    burnInText.textContent = '';
+  }
+  document.querySelectorAll('.cue').forEach((node,i)=>{
+    node.classList.toggle('active', cues[i]===active);
+  });
+}
+
+// ---------- model loading ----------
+loadModelBtn.addEventListener('click', async ()=>{
+  loadModelBtn.disabled = true;
+  setStatus('loading model…', 'busy');
+  const modelId = modelSelect.value;
+  try{
+    transcriber = await pipeline('automatic-speech-recognition', modelId, {
+      progress_callback: (p) => {
+        if(p.status === 'progress'){
+          const pct = Math.round(p.progress || 0);
+          progressBar.style.width = pct + '%';
+          progressLabel.textContent = `${p.file || ''} — ${pct}%`;
+        } else if(p.status === 'ready' || p.status === 'done'){
+          progressLabel.textContent = 'ready';
+        } else if(p.status){
+          progressLabel.textContent = p.status;
+        }
+      }
+    });
+    progressBar.style.width='100%';
+    progressLabel.textContent = 'model cached — ready for offline use';
+    setStatus('ready', 'ready');
+    transcribeBtn.disabled = !audioSamples;
+  }catch(err){
+    console.error(err);
+    setStatus('model failed to load', '');
+    progressLabel.textContent = 'error — check console / connection';
+  }
+  loadModelBtn.disabled = false;
+});
+
+// ---------- transcription ----------
+transcribeBtn.addEventListener('click', async ()=>{
+  if(!transcriber || !audioSamples) return;
+  transcribeBtn.disabled = true;
+  setStatus('transcribing…', 'busy');
+  progressLabel.textContent = 'running inference — this can take a while on CPU';
+  try{
+    const output = await transcriber(audioSamples, {
+      chunk_length_s: 30,
+      stride_length_s: 5,
+      return_timestamps: true,
+    });
+    const chunks = output.chunks && output.chunks.length ? output.chunks : [{text: output.text, timestamp:[0, audioDuration]}];
+    cues = chunks
+      .filter(c => c.text && c.text.trim())
+      .map(c => ({
+        start: c.timestamp[0] ?? 0,
+        end: c.timestamp[1] ?? (c.timestamp[0] ?? 0) + 2,
+        text: c.text.trim()
+      }));
+    renderCues();
+    drawWaveform();
+    setStatus('done', 'ready');
+    progressLabel.textContent = `${cues.length} cues generated`;
+    [exportSrt, exportVtt, exportTxt].forEach(b=> b.disabled = cues.length===0);
+  }catch(err){
+    console.error(err);
+    setStatus('transcription failed', '');
+  }
+  transcribeBtn.disabled = false;
+});
+
+function resetCues(){
+  cues = [];
+  renderCues();
+  [exportSrt, exportVtt, exportTxt].forEach(b=> b.disabled = true);
+}
+
+function renderCues(){
+  cueCount.textContent = cues.length ? `(${cues.length})` : '';
+  if(!cues.length){
+    cueList.innerHTML = '<div class="empty-state">No captions yet — load a video, load a model, then generate captions.</div>';
+    return;
+  }
+  cueList.innerHTML = '';
+  cues.forEach((c, i)=>{
+    const row = document.createElement('div');
+    row.className = 'cue';
+    row.innerHTML = `
+      <div class="ts">${fmtTs(c.start)}<br>${fmtTs(c.end)}</div>
+      <textarea rows="2" data-i="${i}"></textarea>
+      <button class="del" data-i="${i}" title="Delete cue">✕</button>
+    `;
+    row.querySelector('textarea').value = c.text;
+    cueList.appendChild(row);
+  });
+  cueList.querySelectorAll('textarea').forEach(ta=>{
+    ta.addEventListener('input', (e)=>{
+      cues[+e.target.dataset.i].text = e.target.value;
+    });
+    ta.addEventListener('focus', (e)=>{
+      const c = cues[+e.target.dataset.i];
+      video.currentTime = c.start;
+    });
+  });
+  cueList.querySelectorAll('.del').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      cues.splice(+e.target.dataset.i, 1);
+      renderCues();
+      drawWaveform();
+    });
+  });
+}
+
+function fmtTs(t){
+  const h = Math.floor(t/3600).toString().padStart(2,'0');
+  const m = Math.floor((t%3600)/60).toString().padStart(2,'0');
+  const s = Math.floor(t%60).toString().padStart(2,'0');
+  const ms = Math.floor((t-Math.floor(t))*1000).toString().padStart(3,'0');
+  return `${h}:${m}:${s}.${ms}`;
+}
+
+function setStatus(text, cls){
+  statusText.textContent = text;
+  statusDot.className = 'dot' + (cls ? ' '+cls : '');
+}
+
+// ---------- export ----------
+function toSrtTs(t){ return fmtTs(t).replace('.', ','); }
+function toVttTs(t){ return fmtTs(t); }
+
+function download(filename, content){
+  const blob = new Blob([content], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+exportSrt.addEventListener('click', ()=>{
+  const out = cues.map((c,i)=> `${i+1}\n${toSrtTs(c.start)} --> ${toSrtTs(c.end)}\n${c.text}\n`).join('\n');
+  download('captions.srt', out);
+});
+exportVtt.addEventListener('click', ()=>{
+  const out = 'WEBVTT\n\n' + cues.map((c)=> `${toVttTs(c.start)} --> ${toVttTs(c.end)}\n${c.text}\n`).join('\n');
+  download('captions.vtt', out);
+});
+exportTxt.addEventListener('click', ()=>{
+  const out = cues.map(c=>c.text).join('\n');
+  download('captions.txt', out);
+});
+
+window.addEventListener('resize', ()=>{ if(peaks.length) drawWaveform(); });
+</script>
+
+</body>
+</html>
